@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1677ff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="个人记账">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>个人记账</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif; background:#f2f3f5; color:#222; padding-bottom:84px; }
+  .tabbar { position:fixed; bottom:0; left:0; right:0; background:#fff; display:flex; border-top:1px solid #eee; z-index:10; }
+  .tabbar button { flex:1; padding:12px 0; background:none; border:none; font-size:14px; color:#888; }
+  .tabbar button.active { color:#1677ff; font-weight:600; }
+  .page { display:none; padding:16px; }
+  .page.active { display:block; }
+  .card { background:#fff; border-radius:12px; padding:16px; margin-bottom:14px; box-shadow:0 1px 3px rgba(0,0,0,.04); }
+  h2 { font-size:17px; margin-bottom:14px; }
+  label { display:block; font-size:13px; color:#666; margin:12px 0 6px; }
+  input, select, textarea { width:100%; padding:10px 12px; border:1px solid #ddd; border-radius:8px; font-size:15px; background:#fff; }
+  textarea { height:72px; resize:none; }
+  .btn { display:block; width:100%; padding:13px; border:none; border-radius:10px; font-size:16px; background:#1677ff; color:#fff; margin-top:14px; }
+  .btn.ghost { background:#fff; color:#1677ff; border:1px solid #1677ff; }
+  .btn.danger { background:#ff4d4f; }
+  .btn.small { width:auto; padding:8px 14px; font-size:13px; margin:0; display:inline-block; border-radius:8px; }
+  .row { display:flex; gap:10px; margin-top:14px; }
+  .row .btn { flex:1; }
+  .empty { text-align:center; color:#aaa; padding:30px 0; font-size:14px; }
+  .toast { position:fixed; top:40%; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.8); color:#fff; padding:10px 20px; border-radius:8px; font-size:14px; z-index:99; display:none; max-width:80%; text-align:center; }
+
+  /* 类型切换 */
+  .seg { display:flex; background:#f0f3f8; border-radius:10px; padding:4px; }
+  .seg button { flex:1; padding:9px 0; border:none; background:none; border-radius:8px; font-size:15px; color:#666; }
+  .seg button.active.exp { background:#fff; color:#ff6a00; font-weight:600; }
+  .seg button.active.inc { background:#fff; color:#52c41a; font-weight:600; }
+
+  /* 分类 chips */
+  .chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+  .chip { padding:7px 14px; border:1px solid #ddd; border-radius:20px; font-size:14px; background:#fff; color:#555; }
+  .chip.active { background:#1677ff; border-color:#1677ff; color:#fff; }
+
+  /* OCR 入口 */
+  .ocr-entry { display:flex; align-items:center; justify-content:center; gap:8px; background:linear-gradient(135deg,#1677ff,#4c9aff); color:#fff; border-radius:12px; padding:15px; font-size:16px; font-weight:600; margin-bottom:14px; border:none; width:100%; }
+
+  /* 统计卡片 */
+  .stat-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+  .stat { background:#f7f9fc; border-radius:10px; padding:12px 4px; text-align:center; min-width:0; }
+  .stat .num { font-size:15px; font-weight:700; margin-top:4px; word-break:break-all; }
+  .stat .lbl { font-size:12px; color:#888; }
+  .num.exp { color:#ff6a00; } .num.inc { color:#52c41a; } .num.bal { color:#1677ff; }
+
+  .cat-row { margin:12px 0; }
+  .cat-row-top { display:flex; justify-content:space-between; font-size:14px; margin-bottom:5px; }
+  .cat-bar { height:8px; background:#f0f3f8; border-radius:6px; overflow:hidden; }
+  .cat-bar i { display:block; height:100%; background:#1677ff; border-radius:6px; }
+
+  /* 近 6 个月柱状对比（纯 CSS） */
+  .bars { display:flex; align-items:flex-end; gap:8px; height:180px; margin-top:16px; padding:0 4px; }
+  .bar-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; height:100%; justify-content:flex-end; }
+  .bar-pair { display:flex; align-items:flex-end; gap:3px; height:140px; }
+  .bar-pair i { width:10px; border-radius:3px 3px 0 0; display:block; }
+  .bar-pair i.exp { background:#ff6a00; }
+  .bar-pair i.inc { background:#52c41a; }
+  .bar-month { font-size:11px; color:#888; }
+  .legend { display:flex; gap:16px; font-size:12px; color:#666; margin-top:10px; justify-content:center; }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:4px; }
+
+  /* 历史列表 */
+  .item { padding:12px 0; border-bottom:1px solid #f0f0f0; }
+  .item:last-child { border-bottom:none; }
+  .item-main { display:flex; align-items:center; gap:8px; min-width:0; }
+  .item-info { min-width:0; flex:1; }
+  .item-line { display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
+  .item-line b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .dot { width:8px; height:8px; border-radius:50%; display:inline-block; flex:none; }
+  .dot.exp { background:#ff6a00; } .dot.inc { background:#52c41a; }
+  .amount { font-size:16px; font-weight:700; white-space:nowrap; flex:none; }
+  .amount.exp { color:#ff6a00; } .amount.inc { color:#52c41a; }
+  .meta { font-size:12px; color:#999; margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .item-actions { display:flex; gap:8px; align-items:center; margin-top:8px; }
+  .item-actions .btn.small { padding:6px 14px; font-size:13px; }
+
+  /* 弹窗 */
+  .mask { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:100; display:flex; align-items:center; justify-content:center; padding:20px; }
+  .dialog { background:#fff; border-radius:16px; padding:20px 18px; width:100%; max-width:360px; max-height:88vh; overflow-y:auto; }
+  .dialog-title { font-size:17px; font-weight:700; margin-bottom:10px; }
+  .preview { width:100%; border-radius:10px; margin:10px 0; max-height:180px; object-fit:contain; background:#f7f9fc; }
+  .progress-line { font-size:13px; color:#666; margin:8px 0; }
+  .filter-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .sync-tag { font-size:12px; color:#888; float:right; font-weight:400; }
+</style>
+</head>
+<body>
+
+<!-- 1. 记一笔 -->
+<div class="page active" id="page-add">
+  <button class="ocr-entry" onclick="pickOcrImage()">📷 截图识别账单</button>
+  <div class="card">
+    <h2>记一笔 <span class="sync-tag" id="sync-tag">本地模式</span></h2>
+    <div class="seg" id="type-seg">
+      <button class="active exp" data-type="expense" onclick="setType('expense')">支出</button>
+      <button data-type="income" onclick="setType('income')">收入</button>
+    </div>
+    <label>分类</label>
+    <div class="chips" id="cat-chips"></div>
+    <label>金额（元）</label>
+    <input type="number" id="add-amount" placeholder="0.00" inputmode="decimal" step="0.01" min="0">
+    <label>日期</label>
+    <input type="date" id="add-date">
+    <label>备注</label>
+    <textarea id="add-note" placeholder="商家 / 事项（可选）"></textarea>
+    <button class="btn" onclick="saveRecord()">保存</button>
+  </div>
+</div>
+
+<!-- 2. 统计 -->
+<div class="page" id="page-stats">
+  <div class="card">
+    <h2>本月概览</h2>
+    <div class="stat-grid">
+      <div class="stat"><div class="lbl">本月支出</div><div class="num exp" id="stat-expense">0.00</div></div>
+      <div class="stat"><div class="lbl">本月收入</div><div class="num inc" id="stat-income">0.00</div></div>
+      <div class="stat"><div class="lbl">本月结余</div><div class="num bal" id="stat-balance">0.00</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>支出分类占比（本月）</h2>
+    <div id="cat-breakdown"></div>
+  </div>
+  <div class="card">
+    <h2>近 6 个月收支对比</h2>
+    <div class="bars" id="month-bars"></div>
+    <div class="legend"><span><i style="background:#ff6a00"></i>支出</span><span><i style="background:#52c41a"></i>收入</span></div>
+  </div>
+</div>
+
+<!-- 3. 历史 -->
+<div class="page" id="page-history">
+  <div class="card">
+    <h2>筛选</h2>
+    <div class="filter-grid">
+      <select id="f-type" onchange="renderHistory()">
+        <option value="">全部类型</option>
+        <option value="expense">支出</option>
+        <option value="income">收入</option>
+      </select>
+      <select id="f-category" onchange="renderHistory()"><option value="">全部分类</option></select>
+      <input type="number" id="f-min" placeholder="金额下限" inputmode="decimal" oninput="renderHistory()">
+      <input type="number" id="f-max" placeholder="金额上限" inputmode="decimal" oninput="renderHistory()">
+    </div>
+    <label>月份</label>
+    <select id="f-month" onchange="renderHistory()"><option value="">全部月份</option></select>
+  </div>
+  <div class="card">
+    <h2>账单历史</h2>
+    <div id="history-list"></div>
+  </div>
+</div>
+
+<div class="tabbar">
+  <button class="active" data-page="page-add" onclick="switchTab(this)">记一笔</button>
+  <button data-page="page-stats" onclick="switchTab(this)">统计</button>
+  <button data-page="page-history" onclick="switchTab(this)">历史</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- OCR 识别 / 确认弹窗 -->
+<div class="mask" id="ocr-mask" style="display:none">
+  <div class="dialog">
+    <div class="dialog-title" id="ocr-title">截图识别账单</div>
+    <img class="preview" id="ocr-preview" alt="账单预览">
+    <div class="progress-line" id="ocr-progress"></div>
+    <div id="ocr-form" style="display:none">
+      <div class="seg" id="ocr-type-seg">
+        <button class="active exp" data-type="expense" onclick="ocrSetType('expense')">支出</button>
+        <button data-type="income" onclick="ocrSetType('income')">收入</button>
+      </div>
+      <label>金额（元）</label>
+      <input type="number" id="ocr-amount" inputmode="decimal" step="0.01" min="0">
+      <label>分类</label>
+      <select id="ocr-category"></select>
+      <label>日期</label>
+      <input type="date" id="ocr-date">
+      <label>商家 / 备注</label>
+      <textarea id="ocr-note"></textarea>
+    </div>
+    <div class="row">
+      <button class="btn ghost" id="ocr-btn-retry" onclick="pickOcrImage()">重新识别</button>
+      <button class="btn danger" onclick="closeOcr()">取消</button>
+    </div>
+    <button class="btn" id="ocr-btn-confirm" style="display:none" onclick="confirmOcrEntry()">确认入账</button>
+  </div>
+</div>
+<input type="file" id="ocr-file" accept="image/*" capture="environment" style="display:none">
+
+<!-- 编辑弹窗 -->
+<div class="mask" id="edit-mask" style="display:none">
+  <div class="dialog">
+    <div class="dialog-title">编辑账单</div>
+    <div class="seg" id="edit-type-seg">
+      <button data-type="expense" onclick="editSetType('expense')">支出</button>
+      <button data-type="income" onclick="editSetType('income')">收入</button>
+    </div>
+    <label>金额（元）</label>
+    <input type="number" id="edit-amount" inputmode="decimal" step="0.01" min="0">
+    <label>分类</label>
+    <select id="edit-category"></select>
+    <label>日期</label>
+    <input type="date" id="edit-date">
+    <label>备注</label>
+    <textarea id="edit-note"></textarea>
+    <div class="row">
+      <button class="btn ghost" onclick="closeEdit()">取消</button>
+      <button class="btn" onclick="saveEdit()">保存修改</button>
+    </div>
+  </div>
+</div>
+
+<!-- 删除二次确认 -->
+<div class="mask" id="del-mask" style="display:none">
+  <div class="dialog" style="text-align:center">
+    <div class="dialog-title">确认删除？</div>
+    <div class="meta" style="margin:8px 0 16px">删除后不可恢复。</div>
+    <div class="row">
+      <button class="btn ghost" onclick="closeDel()">取消</button>
+      <button class="btn danger" onclick="confirmDel()">确认删除</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===== OCR 解析纯函数（与 test/ledger_parser.js 同源） ===== */
+/*
+ * ledger_parser.js —— 账单 OCR 文本解析纯函数（无浏览器依赖，可在 Node 下单测）
+ *
+ * 解析规则：
+ *  - 金额：优先 ¥/￥/RMB/人民币 后的数字；其次“xx 元”；最后取文本中最像金额的 0.01–999999.99 数字
+ *  - 日期：2026-11-22 / 2026/11/22 / 2026年11月22日，统一输出 YYYY-MM-DD
+ *  - 商家/对方：交易对方/交易对手/对方/商家/商品说明/商户/收款方/付款方 行冒号后文字
+ *  - 类型：支出/付款/已支付/转出/消费/支付 → expense；收入/收款/转入/退款/入账 → income；识别不出默认 expense
+ */
+
+(function (root, factory) {
+  if (typeof module === "object" && module.exports) {
+    module.exports = factory();
+  } else {
+    root.LedgerParser = factory();
+  }
+})(typeof self !== "undefined" ? self : this, function () {
+
+  function pad2(n) { return String(n).padStart(2, "0"); }
+
+  // 清洗数字：去千分位逗号，校验两位小数、金额区间
+  function cleanNum(s) {
+    if (s == null) return null;
+    let n = String(s).replace(/,/g, "").trim();
+    if (!/^[0-9]+(\.[0-9]{1,2})?$/.test(n)) return null;
+    const v = parseFloat(n);
+    return (isFinite(v) && v >= 0.01 && v <= 999999.99) ? v : null;
+  }
+
+  // 全角数字转半角，便于 OCR 文本归一
+  function normalizeText(raw) {
+    return String(raw || "").replace(/[０-９]/g, function (ch) {
+      return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
+    });
+  }
+
+  // 金额提取
+  function parseAmount(t) {
+    // 1) 货币符号后数字：¥28.50 / ￥28.50 / RMB 28.50 / 人民币 28.50
+    const symbolM = t.match(/(?:¥|￥|RMB|人民币)\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)/i);
+    if (symbolM) {
+      const v = cleanNum(symbolM[1]);
+      if (v != null) return v;
+    }
+    // 2) “xx 元”结尾
+    const yuanM = t.match(/([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)\s*元/);
+    if (yuanM) {
+      const v = cleanNum(yuanM[1]);
+      if (v != null) return v;
+    }
+    // 3) 兜底：先剔除日期片段，避免把年份/月日当成金额；优先带小数的金额
+    const noDate = t.replace(/\d{4}[-\/年]\d{1,2}[-\/月]\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?/g, " ");
+    const all = noDate.match(/[0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,2})?/g) || [];
+    const decimals = [], integers = [];
+    for (const token of all) {
+      const v = cleanNum(token);
+      if (v == null) continue;
+      if (/^\d+\.\d+$/.test(token)) decimals.push(v); else integers.push(v);
+    }
+    if (decimals.length) return decimals[0];
+    if (integers.length) return integers[0];
+    return null;
+  }
+
+  // 日期提取，输出 YYYY-MM-DD
+  function parseDate(t) {
+    const dm = t.match(/(\d{4})[-\/年](\d{1,2})[-\/月](\d{1,2})/);
+    if (!dm) return "";
+    const y = +dm[1], mo = +dm[2], d = +dm[3];
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return "";
+    return y + "-" + pad2(mo) + "-" + pad2(d);
+  }
+
+  // 商家/交易对方提取
+  function parseMerchant(t) {
+    const re = /(?:交易对方|交易对手|对方|商家|商品说明|商品|商户|收款方|付款方|备注)\s*[:：]\s*([^\n\r,，;；]+)/;
+    const m = t.match(re);
+    if (!m) return "";
+    return m[1].trim().replace(/[。.]+$/, "").trim();
+  }
+
+  // 类型判断：支出关键词优先（支付宝支出页常出现“收款方”字样，避免误判成收入）
+  function parseType(t) {
+    // 注意：不使用裸“支付”，避免“支付宝”应用名误判为支出
+    const expenseHit = /支出|付款|已支付|转出|消费|转账支出/.test(t);
+    const incomeHit = /收入|收款|转入|退款|入账|红包/.test(t);
+    if (expenseHit) return "expense";
+    if (incomeHit) return "income";
+    return "expense";
+  }
+
+  /**
+   * 主入口：解析 OCR 文本
+   * @param {string} raw OCR 原始文本
+   * @returns {{amount:number|null, date:string, merchant:string, type:'expense'|'income'}}
+   */
+  function parseBillText(raw) {
+    const t = normalizeText(raw);
+    return {
+      amount: parseAmount(t),
+      date: parseDate(t),
+      merchant: parseMerchant(t),
+      type: parseType(t)
+    };
+  }
+
+  return { parseBillText, cleanNum, normalizeText };
+});
+
+
+/* ================= 配置 ================= */
+const SUPABASE_URL = "https://gqvybdpgrfudiyvfqohr.supabase.co";
+const SUPABASE_KEY = "sb_publishable_TefJ6DXfsTaZDByxIv5Fmw_wTFPdjE9";
+const TABLE = "money_ledger";
+const STORAGE_KEY = "ledger_local_v1";
+
+// sb_ 开头的 key：只带 apikey 头，不带 Authorization Bearer
+const SB_HEADERS = { apikey: SUPABASE_KEY, "Content-Type": "application/json" };
+
+const CATS = {
+  expense: ["餐饮", "交通", "购物", "住房", "娱乐", "医疗", "通讯", "其他"],
+  income: ["工资", "兼职", "红包", "其他"]
+};
+
+let records = [];
+let currentType = "expense";
+let currentCat = CATS.expense[0];
+let ocrState = { type: "expense", image: "", editingId: null, deletingId: null };
+
+/* ================= 本地存储 ================= */
+function loadLocal() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+  catch (e) { return []; }
+}
+function saveLocal(arr) { localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); }
+
+function genId() {
+  const rand = Math.floor(Math.random() * 900 + 100);
+  return Date.now() * 1000 + rand;
+}
+
+function normalizeRow(r) {
+  return {
+    id: Number(r.id),
+    type: r.type === "income" ? "income" : "expense",
+    amount: Number(r.amount) || 0,
+    category: r.category || "其他",
+    note: r.note || "",
+    date: r.date || todayStr(),
+    created_at: r.created_at || ""
+  };
+}
+
+/* ================= 数据层：云端优先，本地兜底 ================= */
+async function loadData() {
+  const local = loadLocal();
+  // 先立即渲染本地数据，避免云端请求挂起时长时间空白/显示 0
+  records = local.slice().sort((a, b) =>
+    b.date.localeCompare(a.date) || b.id - a.id
+  );
+  try {
+    const r = await cloudFetch(`${SUPABASE_URL}/rest/v1/${TABLE}?select=*`, { headers: SB_HEADERS }, 6000);
+    if (!r.ok) throw new Error("HTTP " + r.status); // 表不存在时返回 404，走本地兜底
+    const rows = await r.json();
+    const cloud = rows.map(normalizeRow);
+    const map = new Map();
+    local.forEach(x => map.set(String(x.id), x));
+    cloud.forEach(x => map.set(String(x.id), x)); // 同 id 云端优先
+    records = [...map.values()].sort((a, b) =>
+      b.date.localeCompare(a.date) || b.id - a.id
+    );
+    document.getElementById("sync-tag").textContent = "云端同步";
+    refreshAll();
+    return records;
+  } catch (e) {
+    console.warn("云端不可用，使用本地数据：", e.message || e);
+    document.getElementById("sync-tag").textContent = "本地模式";
+    if (!loadData._warned) { toast("云端暂不可用，已使用本地数据"); loadData._warned = true; }
+    refreshAll();
+    return records;
+  }
+}
+
+// 云端请求带超时：网络挂起时也能快速落本地，不阻塞界面
+function cloudFetch(url, options, ms = 5000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { ...options, signal: ctrl.signal })
+    .finally(() => clearTimeout(timer));
+}
+
+async function persistNew(row) {
+  // 先写本地，保证界面立刻有记录；云端尽力同步，按 id 合并去重
+  const arr = loadLocal();
+  if (!arr.some(x => x.id === row.id)) { arr.unshift(row); saveLocal(arr); }
+  try {
+    const r = await cloudFetch(`${SUPABASE_URL}/rest/v1/${TABLE}`, {
+      method: "POST", headers: SB_HEADERS, body: JSON.stringify(row)
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    document.getElementById("sync-tag").textContent = "云端同步";
+    return true;
+  } catch (e) {
+    console.warn("云端写入失败，已存本地：", e.message || e);
+    document.getElementById("sync-tag").textContent = "本地模式";
+    return false;
+  }
+}
+
+async function persistUpdate(id, patch) {
+  const arr = loadLocal();
+  const it = arr.find(x => x.id === id);
+  if (it) { Object.assign(it, patch); saveLocal(arr); }
+  try {
+    const r = await cloudFetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${id}`, {
+      method: "PATCH", headers: SB_HEADERS, body: JSON.stringify(patch)
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    document.getElementById("sync-tag").textContent = "云端同步";
+    return true;
+  } catch (e) {
+    console.warn("云端更新失败，已更新本地：", e.message || e);
+    document.getElementById("sync-tag").textContent = "本地模式";
+    return false;
+  }
+}
+
+async function persistRemove(id) {
+  saveLocal(loadLocal().filter(x => x.id !== id));
+  try {
+    const r = await cloudFetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${id}`, {
+      method: "DELETE", headers: SB_HEADERS
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    document.getElementById("sync-tag").textContent = "云端同步";
+    return true;
+  } catch (e) {
+    console.warn("云端删除失败，已删除本地：", e.message || e);
+    document.getElementById("sync-tag").textContent = "本地模式";
+    return false;
+  }
+}
+
+/* ================= 通用 UI ================= */
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.style.display = "block";
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => (t.style.display = "none"), 1800);
+}
+
+function switchTab(btn) {
+  document.querySelectorAll(".tabbar button").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+  document.getElementById(btn.dataset.page).classList.add("active");
+  refreshAll();
+}
+
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+
+function fmt(n) { return Number(n || 0).toFixed(2); }
+
+/* ================= 记一笔 ================= */
+function renderChips() {
+  const box = document.getElementById("cat-chips");
+  box.innerHTML = "";
+  CATS[currentType].forEach(c => {
+    const b = document.createElement("button");
+    b.className = "chip" + (c === currentCat ? " active" : "");
+    b.textContent = c;
+    b.onclick = () => { currentCat = c; renderChips(); };
+    box.appendChild(b);
+  });
+}
+
+function setType(type) {
+  currentType = type;
+  currentCat = CATS[type][0];
+  document.querySelectorAll("#type-seg button").forEach(b => {
+    b.classList.toggle("active", b.dataset.type === type);
+    b.className = b.dataset.type === type
+      ? "active " + (type === "expense" ? "exp" : "inc") : "";
+  });
+  renderChips();
+}
+
+async function saveRecord() {
+  const amount = parseFloat(document.getElementById("add-amount").value);
+  const date = document.getElementById("add-date").value || todayStr();
+  const note = document.getElementById("add-note").value.trim();
+  if (!amount || amount <= 0) { toast("请输入正确金额"); return; }
+  const row = {
+    id: genId(), type: currentType, amount, category: currentCat,
+    note, date, created_at: new Date().toISOString()
+  };
+  await persistNew(row);
+  document.getElementById("add-amount").value = "";
+  document.getElementById("add-note").value = "";
+  toast("已保存");
+  await loadData();
+  refreshAll();
+}
+
+/* ================= 统计 ================= */
+function monthKey(dateStr) { return (dateStr || "").slice(0, 7); }
+
+function renderStats() {
+  const ym = todayStr().slice(0, 7);
+  const monthRows = records.filter(x => monthKey(x.date) === ym);
+  const exp = monthRows.filter(x => x.type === "expense").reduce((s, x) => s + x.amount, 0);
+  const inc = monthRows.filter(x => x.type === "income").reduce((s, x) => s + x.amount, 0);
+  document.getElementById("stat-expense").textContent = fmt(exp);
+  document.getElementById("stat-income").textContent = fmt(inc);
+  document.getElementById("stat-balance").textContent = fmt(inc - exp);
+
+  // 支出分类占比
+  const box = document.getElementById("cat-breakdown");
+  const byCat = {};
+  monthRows.filter(x => x.type === "expense").forEach(x => {
+    byCat[x.category] = (byCat[x.category] || 0) + x.amount;
+  });
+  const entries = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+  if (!entries.length) { box.innerHTML = '<div class="empty">本月暂无支出</div>'; }
+  else {
+    box.innerHTML = entries.map(([cat, amt]) => {
+      const pct = exp > 0 ? (amt / exp * 100) : 0;
+      return `<div class="cat-row">
+        <div class="cat-row-top"><span>${cat}</span><span>¥${fmt(amt)} · ${pct.toFixed(1)}%</span></div>
+        <div class="cat-bar"><i style="width:${pct}%"></i></div>
+      </div>`;
+    }).join("");
+  }
+
+  // 近 6 个月收支对比（纯 CSS 柱状）
+  const months = [];
+  const d = new Date();
+  for (let i = 5; i >= 0; i--) {
+    const md = new Date(d.getFullYear(), d.getMonth() - i, 1);
+    months.push(md.getFullYear() + "-" + String(md.getMonth() + 1).padStart(2, "0"));
+  }
+  const buckets = months.map(m => ({
+    m, exp: records.filter(x => monthKey(x.date) === m && x.type === "expense").reduce((s, x) => s + x.amount, 0),
+    inc: records.filter(x => monthKey(x.date) === m && x.type === "income").reduce((s, x) => s + x.amount, 0)
+  }));
+  const max = Math.max(1, ...buckets.map(b => Math.max(b.exp, b.inc)));
+  document.getElementById("month-bars").innerHTML = buckets.map(b => {
+    const hE = b.exp > 0 ? Math.max(4, b.exp / max * 130) : 0;
+    const hI = b.inc > 0 ? Math.max(4, b.inc / max * 130) : 0;
+    return `<div class="bar-col">
+      <div class="bar-pair">
+        <i class="exp" style="height:${hE}px" title="支出 ¥${fmt(b.exp)}"></i>
+        <i class="inc" style="height:${hI}px" title="收入 ¥${fmt(b.inc)}"></i>
+      </div>
+      <div class="bar-month">${b.m.slice(5)}</div>
+    </div>`;
+  }).join("");
+}
+
+/* ================= 历史 ================= */
+function renderHistory() {
+  const fType = document.getElementById("f-type").value;
+  const fCat = document.getElementById("f-category").value;
+  const fMin = parseFloat(document.getElementById("f-min").value);
+  const fMax = parseFloat(document.getElementById("f-max").value);
+  const fMonth = document.getElementById("f-month").value;
+
+  // 分类下拉选项
+  const catSel = document.getElementById("f-category");
+  const cats = [...new Set(records.map(x => x.category))];
+  catSel.innerHTML = '<option value="">全部分类</option>' +
+    cats.map(c => `<option ${c === fCat ? "selected" : ""}>${c}</option>`).join("");
+
+  // 月份下拉选项
+  const mSel = document.getElementById("f-month");
+  const months = [...new Set(records.map(x => monthKey(x.date)))].sort().reverse();
+  mSel.innerHTML = '<option value="">全部月份</option>' +
+    months.map(m => `<option ${m === fMonth ? "selected" : ""}>${m}</option>`).join("");
+
+  const filtered = records.filter(x => {
+    if (fType && x.type !== fType) return false;
+    if (fCat && x.category !== fCat) return false;
+    if (!isNaN(fMin) && x.amount < fMin) return false;
+    if (!isNaN(fMax) && x.amount > fMax) return false;
+    if (fMonth && monthKey(x.date) !== fMonth) return false;
+    return true;
+  });
+
+  const box = document.getElementById("history-list");
+  if (!filtered.length) { box.innerHTML = '<div class="empty">暂无账单</div>'; return; }
+  box.innerHTML = filtered.map(x => `
+    <div class="item">
+      <div class="item-main">
+        <span class="dot ${x.type}"></span>
+        <div class="item-info">
+          <div class="item-line"><b>${x.category}</b><span class="amount ${x.type}">${x.type === "income" ? "+" : "-"}¥${fmt(x.amount)}</span></div>
+          <div class="meta">${x.date}${x.note ? " · " + escapeHtml(x.note) : ""}</div>
+        </div>
+      </div>
+      <div class="item-actions">
+        <button class="btn small ghost" onclick="openEdit(${x.id})">编辑</button>
+        <button class="btn small danger" onclick="askDel(${x.id})">删除</button>
+      </div>
+    </div>`).join("");
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/* ================= 编辑 ================= */
+function fillCategorySelect(sel, type, selected) {
+  sel.innerHTML = CATS[type].map(c => `<option ${c === selected ? "selected" : ""}>${c}</option>`).join("");
+}
+
+let editType = "expense";
+function openEdit(id) {
+  const x = records.find(r => r.id === id);
+  if (!x) return;
+  ocrState.editingId = id;
+  editType = x.type;
+  document.getElementById("edit-amount").value = x.amount;
+  document.getElementById("edit-date").value = x.date;
+  document.getElementById("edit-note").value = x.note;
+  fillCategorySelect(document.getElementById("edit-category"), editType, x.category);
+  editSetType(editType);
+  document.getElementById("edit-mask").style.display = "flex";
+}
+function editSetType(type) {
+  editType = type;
+  document.querySelectorAll("#edit-type-seg button").forEach(b =>
+    b.classList.toggle("active", b.dataset.type === type));
+  fillCategorySelect(document.getElementById("edit-category"), type,
+    document.getElementById("edit-category").value);
+}
+function closeEdit() { document.getElementById("edit-mask").style.display = "none"; }
+
+async function saveEdit() {
+  const id = ocrState.editingId;
+  const amount = parseFloat(document.getElementById("edit-amount").value);
+  const date = document.getElementById("edit-date").value || todayStr();
+  const note = document.getElementById("edit-note").value.trim();
+  const category = document.getElementById("edit-category").value;
+  if (!amount || amount <= 0) { toast("请输入正确金额"); return; }
+  const patch = { type: editType, amount, category, note, date };
+  await persistUpdate(id, patch);
+  closeEdit();
+  toast("已更新");
+  await loadData();
+  refreshAll();
+}
+
+/* ================= 删除（二次确认） ================= */
+function askDel(id) { ocrState.deletingId = id; document.getElementById("del-mask").style.display = "flex"; }
+function closeDel() { document.getElementById("del-mask").style.display = "none"; }
+async function confirmDel() {
+  await persistRemove(ocrState.deletingId);
+  closeDel();
+  toast("已删除");
+  await loadData();
+  refreshAll();
+}
+
+/* ================= OCR 截图识别 ================= */
+function pickOcrImage() { document.getElementById("ocr-file").click(); }
+
+document.getElementById("ocr-file").addEventListener("change", async function () {
+  const file = this.files && this.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async () => {
+    ocrState.image = reader.result;
+    openOcrDialog();
+    await runOcr(ocrState.image);
+  };
+  reader.readAsDataURL(file);
+  this.value = "";
+});
+
+function openOcrDialog() {
+  document.getElementById("ocr-mask").style.display = "flex";
+  document.getElementById("ocr-preview").src = ocrState.image;
+  document.getElementById("ocr-form").style.display = "none";
+  document.getElementById("ocr-btn-confirm").style.display = "none";
+  document.getElementById("ocr-progress").textContent = "准备识别…";
+}
+
+function closeOcr() {
+  document.getElementById("ocr-mask").style.display = "none";
+  ocrState.image = "";
+}
+
+async function runOcr(dataUrl) {
+  if (typeof Tesseract === "undefined") {
+    document.getElementById("ocr-progress").textContent = "识别组件加载失败，请检查网络后重试";
+    return;
+  }
+  try {
+    const worker = await Tesseract.createWorker("chi_sim+eng", 1, {
+      logger: m => {
+        if (m.status === "recognizing text") {
+          document.getElementById("ocr-progress").textContent = "识别中… " + Math.round(m.progress * 100) + "%";
+        } else {
+          document.getElementById("ocr-progress").textContent = "正在加载语言包…";
+        }
+      }
+    });
+    const { data } = await worker.recognize(dataUrl);
+    await worker.terminate();
+    const parsed = LedgerParser.parseBillText(data.text);
+    if (parsed.amount == null) {
+      document.getElementById("ocr-progress").textContent = "未识别到金额，请重拍清晰截图或改为手动录入";
+      return;
+    }
+    ocrState.type = parsed.type;
+    document.getElementById("ocr-progress").textContent = "识别完成，请核对后入账";
+    document.getElementById("ocr-amount").value = parsed.amount;
+    document.getElementById("ocr-date").value = parsed.date || todayStr();
+    document.getElementById("ocr-note").value = parsed.merchant;
+    fillCategorySelect(document.getElementById("ocr-category"), parsed.type, "");
+    ocrSetType(parsed.type);
+    document.getElementById("ocr-form").style.display = "block";
+    document.getElementById("ocr-btn-confirm").style.display = "block";
+  } catch (e) {
+    console.error(e);
+    document.getElementById("ocr-progress").textContent = "识别失败：" + (e.message || e) + "，请重试";
+  }
+}
+
+function ocrSetType(type) {
+  ocrState.type = type;
+  document.querySelectorAll("#ocr-type-seg button").forEach(b =>
+    b.classList.toggle("active", b.dataset.type === type));
+  fillCategorySelect(document.getElementById("ocr-category"), type,
+    document.getElementById("ocr-category").value);
+}
+
+async function confirmOcrEntry() {
+  const amount = parseFloat(document.getElementById("ocr-amount").value);
+  const date = document.getElementById("ocr-date").value || todayStr();
+  const note = document.getElementById("ocr-note").value.trim();
+  const category = document.getElementById("ocr-category").value;
+  if (!amount || amount <= 0) { toast("请核对金额"); return; }
+  const row = {
+    id: genId(), type: ocrState.type, amount, category,
+    note, date, created_at: new Date().toISOString()
+  };
+  await persistNew(row);
+  closeOcr();
+  toast("已入账");
+  await loadData();
+  refreshAll();
+}
+
+/* ================= 启动 ================= */
+function refreshAll() {
+  renderChips();
+  renderStats();
+  renderHistory();
+}
+
+document.getElementById("add-date").value = todayStr();
+loadData().then(refreshAll);
+</script>
+</body>
+</html>
