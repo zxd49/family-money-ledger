@@ -324,10 +324,14 @@
 
   // 商家/交易对方提取
   function parseMerchant(t) {
+    // 1) 带标签：交易对方/商家/收款方 等
     const re = /(?:交易对方|交易对手|对方|商家|商品说明|商品|商户|收款方|付款方|备注)\s*[:：]\s*([^\n\r,，;；]+)/;
     const m = t.match(re);
-    if (!m) return "";
-    return m[1].trim().replace(/[。.]+$/, "").trim();
+    if (m) return m[1].trim().replace(/[。.]+$/, "").trim();
+    // 2) 标题行：转账-转给XX / 扫二维码付款-给XX（容忍OCR空格），去掉"转给/给"前缀
+    const title = t.match(/(?:转账[-\s]*转给?|扫二维码付款[-\s]*给?|扫码付款[-\s]*给?)\s*([^\n\r,，;；\-]+)/);
+    if (title) return title[1].trim().replace(/^(转给?|给)\s*/, "").replace(/[。.]+$/, "").trim();
+    return "";
   }
 
   // 类型判断：支出关键词优先（支付宝支出页常出现“收款方”字样，避免误判成收入）
@@ -745,7 +749,7 @@ function closeOcr() {
   ocrState.image = "";
 }
 
-// OCR 图像预处理：放大2倍、灰度、提对比度，帮助识别账单大字
+// OCR 图像预处理：放大、灰度、提对比；深色背景(转账页)自动反色，帮助识别账单大字
 function preprocessForOcr(dataUrl) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -758,10 +762,16 @@ function preprocessForOcr(dataUrl) {
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       const d = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const px = d.data;
+      // 先算平均亮度判断是否深色背景
+      let sum = 0, n = 0;
+      for (let i = 0; i < px.length; i += 16) {
+        sum += 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+        n++;
+      }
+      const dark = (sum / n) < 128;
       for (let i = 0; i < px.length; i += 4) {
-        // 灰度
         let g = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
-        // 提对比（以128为中值拉伸）
+        if (dark) g = 255 - g; // 深色背景反色：黑底白字 -> 白底黑字
         g = Math.max(0, Math.min(255, (g - 128) * 1.8 + 128));
         px[i] = px[i + 1] = px[i + 2] = g;
       }
