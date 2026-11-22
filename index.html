@@ -322,15 +322,20 @@
     return y + "-" + pad2(mo) + "-" + pad2(d);
   }
 
+  // 去掉 OCR 在汉字之间插入的空格（如"广东 肠 粉" -> "广东肠粉"），保留中英/数字间空格
+  function squeezeCn(s) {
+    return String(s).replace(/([\u4e00-\u9fa5])\s+(?=[\u4e00-\u9fa5])/g, "$1");
+  }
+
   // 商家/交易对方提取
   function parseMerchant(t) {
     // 1) 带标签：交易对方/商家/收款方 等
     const re = /(?:交易对方|交易对手|对方|商家|商品说明|商品|商户|收款方|付款方|备注)\s*[:：]\s*([^\n\r,，;；]+)/;
     const m = t.match(re);
-    if (m) return m[1].trim().replace(/[。.]+$/, "").trim();
+    if (m) return squeezeCn(m[1].trim().replace(/[。.]+$/, "").trim());
     // 2) 标题行：转账-转给XX / 扫二维码付款-给XX（容忍OCR空格），去掉"转给/给"前缀
     const title = t.match(/(?:转账[-\s]*转给?|扫二维码付款[-\s]*给?|扫码付款[-\s]*给?)\s*([^\n\r,，;；\-]+)/);
-    if (title) return title[1].trim().replace(/^(转给?|给)\s*/, "").replace(/[。.]+$/, "").trim();
+    if (title) return squeezeCn(title[1].trim().replace(/^(转给?|给)\s*/, "").replace(/[。.]+$/, "").trim());
     return "";
   }
 
