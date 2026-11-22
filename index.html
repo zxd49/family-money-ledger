@@ -102,6 +102,14 @@
 <div class="page active" id="page-add">
   <button class="ocr-entry" onclick="pickOcrImage()">📷 截图识别账单</button>
   <div class="card">
+    <h2>今日收支</h2>
+    <div class="stat-grid">
+      <div class="stat"><div class="lbl">今日支出</div><div class="num exp" id="today-expense">0.00</div></div>
+      <div class="stat"><div class="lbl">今日收入</div><div class="num inc" id="today-income">0.00</div></div>
+      <div class="stat"><div class="lbl">今日结余</div><div class="num bal" id="today-balance">0.00</div></div>
+    </div>
+  </div>
+  <div class="card">
     <h2>记一笔 <span class="sync-tag" id="sync-tag">本地模式</span></h2>
     <div class="seg" id="type-seg">
       <button class="active exp" data-type="expense" onclick="setType('expense')">支出</button>
@@ -577,6 +585,18 @@ function renderStats() {
   document.getElementById("stat-expense").textContent = fmt(exp);
   document.getElementById("stat-income").textContent = fmt(inc);
   document.getElementById("stat-balance").textContent = fmt(inc - exp);
+
+  // 今日收支（按记录日期=今天）
+  const today = todayStr();
+  const todayRows = records.filter(x => x.date === today);
+  const tExp = todayRows.filter(x => x.type === "expense").reduce((s, x) => s + x.amount, 0);
+  const tInc = todayRows.filter(x => x.type === "income").reduce((s, x) => s + x.amount, 0);
+  const te = document.getElementById("today-expense");
+  const ti = document.getElementById("today-income");
+  const tb = document.getElementById("today-balance");
+  if (te) te.textContent = fmt(tExp);
+  if (ti) ti.textContent = fmt(tInc);
+  if (tb) tb.textContent = fmt(tInc - tExp);
 
   // 支出分类占比
   const box = document.getElementById("cat-breakdown");
