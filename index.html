@@ -276,19 +276,26 @@
   // 金额提取
   function parseAmount(t) {
     // 1) 货币符号后数字：¥28.50 / ￥28.50 / RMB 28.50 / 人民币 28.50
-    const symbolM = t.match(/(?:¥|￥|RMB|人民币)\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)/i);
+    const symbolM = t.match(/(?:¥|￥|RMB|人民币)\s*(-?[0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)/i);
     if (symbolM) {
       const v = cleanNum(symbolM[1]);
-      if (v != null) return v;
+      if (v != null) return Math.abs(v);
     }
-    // 2) “xx 元”结尾
-    const yuanM = t.match(/([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)\s*元/);
+    // 2) 账单主金额：独立成行的带负号/小数金额，如 "-13.40"、"13.40"（拼多多/支付宝顶部大字）
+    //    先剔除日期/订单号/时间，避免误取
+    const noDate = t.replace(/\d{4}[-\/年]\d{1,2}[-\/月]\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?/g, " ");
+    const bigAmt = noDate.match(/(?:^|[\s\-:：])\s*(-?[0-9]+(?:,[0-9]{3})*\.[0-9]{1,2})\s*(?:$|[\s\n])/m);
+    if (bigAmt) {
+      const v = cleanNum(bigAmt[1]);
+      if (v != null) return Math.abs(v);
+    }
+    // 3) “xx 元”结尾
+    const yuanM = t.match(/(-?[0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)\s*元/);
     if (yuanM) {
       const v = cleanNum(yuanM[1]);
-      if (v != null) return v;
+      if (v != null) return Math.abs(v);
     }
-    // 3) 兜底：先剔除日期片段，避免把年份/月日当成金额；优先带小数的金额
-    const noDate = t.replace(/\d{4}[-\/年]\d{1,2}[-\/月]\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?/g, " ");
+    // 4) 兜底：优先带小数的金额，其次整数
     const all = noDate.match(/[0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,2})?/g) || [];
     const decimals = [], integers = [];
     for (const token of all) {
@@ -296,8 +303,8 @@
       if (v == null) continue;
       if (/^\d+\.\d+$/.test(token)) decimals.push(v); else integers.push(v);
     }
-    if (decimals.length) return decimals[0];
-    if (integers.length) return integers[0];
+    if (decimals.length) return Math.abs(decimals[0]);
+    if (integers.length) return Math.abs(integers[0]);
     return null;
   }
 
