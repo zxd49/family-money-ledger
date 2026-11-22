@@ -275,15 +275,20 @@
 
   // 金额提取
   function parseAmount(t) {
+    const noDate = t.replace(/\d{4}[-\/年]\d{1,2}[-\/月]\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?/g, " ");
+    // 0) 最高优先：账单顶部带负号的主金额，如 "-13.40"（拼多多/支付宝支出大字，全账单唯一）
+    const negM = noDate.match(/(?:^|[\s:：])\s*-\s*([0-9]+(?:,[0-9]{3})*\.[0-9]{1,2})/m);
+    if (negM) {
+      const v = cleanNum(negM[1]);
+      if (v != null) return Math.abs(v);
+    }
     // 1) 货币符号后数字：¥28.50 / ￥28.50 / RMB 28.50 / 人民币 28.50
     const symbolM = t.match(/(?:¥|￥|RMB|人民币)\s*(-?[0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)/i);
     if (symbolM) {
       const v = cleanNum(symbolM[1]);
       if (v != null) return Math.abs(v);
     }
-    // 2) 账单主金额：独立成行的带负号/小数金额，如 "-13.40"、"13.40"（拼多多/支付宝顶部大字）
-    //    先剔除日期/订单号/时间，避免误取
-    const noDate = t.replace(/\d{4}[-\/年]\d{1,2}[-\/月]\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?/g, " ");
+    // 2) 账单主金额：独立成行的带小数金额，如 "13.40"（顶部大字）
     const bigAmt = noDate.match(/(?:^|[\s\-:：])\s*(-?[0-9]+(?:,[0-9]{3})*\.[0-9]{1,2})\s*(?:$|[\s\n])/m);
     if (bigAmt) {
       const v = cleanNum(bigAmt[1]);
@@ -740,6 +745,34 @@ function closeOcr() {
   ocrState.image = "";
 }
 
+// OCR 图像预处理：放大2倍、灰度、提对比度，帮助识别账单大字
+function preprocessForOcr(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = 2;
+      const w = img.naturalWidth, h = img.naturalHeight;
+      const canvas = document.createElement("canvas");
+      canvas.width = w * scale; canvas.height = h * scale;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const d = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const px = d.data;
+      for (let i = 0; i < px.length; i += 4) {
+        // 灰度
+        let g = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+        // 提对比（以128为中值拉伸）
+        g = Math.max(0, Math.min(255, (g - 128) * 1.8 + 128));
+        px[i] = px[i + 1] = px[i + 2] = g;
+      }
+      ctx.putImageData(d, 0, 0);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 async function runOcr(dataUrl) {
   if (typeof Tesseract === "undefined") {
     document.getElementById("ocr-progress").textContent = "识别组件加载失败，请检查网络后重试";
@@ -751,6 +784,8 @@ async function runOcr(dataUrl) {
     setTimeout(() => rej(new Error("识别超时，请检查网络或改手动录入")), 90000)
   );
   try {
+    // 图像预处理：放大、灰度、提对比，让账单大字/小字更易识别
+    const procUrl = await preprocessForOcr(dataUrl);
     const workerPromise = Tesseract.createWorker("chi_sim+eng", 1, {
       logger: m => {
         if (m.status === "recognizing text") {
@@ -763,7 +798,7 @@ async function runOcr(dataUrl) {
       }
     });
     const worker = await Promise.race([workerPromise, timer]);
-    const recog = worker.recognize(dataUrl);
+    const recog = worker.recognize(procUrl, {}, { tessedit_pageseg_mode: "3" });
     const { data } = await Promise.race([recog, timer]);
     await worker.terminate();
     const parsed = LedgerParser.parseBillText(data.text);
