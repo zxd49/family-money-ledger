@@ -773,6 +773,32 @@ function preprocessForOcr(dataUrl) {
   });
 }
 
+// 裁切图片顶部 [a,b) 比例区域并放大，用于专抓账单主金额（整图WASM易漏读金额行）
+function cropTopBand(dataUrl, aRatio, bRatio) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth, h = img.naturalHeight;
+      const y0 = Math.round(h * aRatio), y1 = Math.round(h * bRatio);
+      const canvas = document.createElement("canvas");
+      canvas.width = w * 3; canvas.height = (y1 - y0) * 3;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, y0, w, y1 - y0, 0, 0, canvas.width, canvas.height);
+      const d = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const px = d.data;
+      for (let i = 0; i < px.length; i += 4) {
+        let g = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+        g = Math.max(0, Math.min(255, (g - 128) * 1.8 + 128));
+        px[i] = px[i + 1] = px[i + 2] = g;
+      }
+      ctx.putImageData(d, 0, 0);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
+
 async function runOcr(dataUrl) {
   if (typeof Tesseract === "undefined") {
     document.getElementById("ocr-progress").textContent = "识别组件加载失败，请检查网络后重试";
@@ -798,10 +824,18 @@ async function runOcr(dataUrl) {
       }
     });
     const worker = await Promise.race([workerPromise, timer]);
+    // 整图识别（取日期/商家）
     const recog = worker.recognize(procUrl, {}, { tessedit_pageseg_mode: "3" });
     const { data } = await Promise.race([recog, timer]);
+    let fullText = data.text;
+    // 顶部金额带单独识别，补整图漏读的主金额（如 -13.40）
+    const band = await cropTopBand(dataUrl, 0.18, 0.34);
+    if (band) {
+      const bandR = await worker.recognize(band, {}, { tessedit_pageseg_mode: "6" });
+      fullText = fullText + "\n" + bandR.data.text;
+    }
     await worker.terminate();
-    const parsed = LedgerParser.parseBillText(data.text);
+    const parsed = LedgerParser.parseBillText(fullText);
     if (parsed.amount == null) {
       prog.textContent = "未识别到金额，请重拍清晰截图或改为手动录入";
       return;
