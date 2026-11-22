@@ -738,25 +738,34 @@ async function runOcr(dataUrl) {
     document.getElementById("ocr-progress").textContent = "识别组件加载失败，请检查网络后重试";
     return;
   }
+  const prog = document.getElementById("ocr-progress");
+  // 语言包加载/识别整体超时：避免长时间卡住
+  const timer = new Promise((_, rej) =>
+    setTimeout(() => rej(new Error("识别超时，请检查网络或改手动录入")), 90000)
+  );
   try {
-    const worker = await Tesseract.createWorker("chi_sim+eng", 1, {
+    const workerPromise = Tesseract.createWorker("chi_sim+eng", 1, {
       logger: m => {
         if (m.status === "recognizing text") {
-          document.getElementById("ocr-progress").textContent = "识别中… " + Math.round(m.progress * 100) + "%";
+          prog.textContent = "识别中… " + Math.round(m.progress * 100) + "%";
+        } else if (m.status === "loading language traineddata") {
+          prog.textContent = "正在下载中文识别包（首次较慢，可开 VPN）…";
         } else {
-          document.getElementById("ocr-progress").textContent = "正在加载语言包…";
+          prog.textContent = "正在初始化…";
         }
       }
     });
-    const { data } = await worker.recognize(dataUrl);
+    const worker = await Promise.race([workerPromise, timer]);
+    const recog = worker.recognize(dataUrl);
+    const { data } = await Promise.race([recog, timer]);
     await worker.terminate();
     const parsed = LedgerParser.parseBillText(data.text);
     if (parsed.amount == null) {
-      document.getElementById("ocr-progress").textContent = "未识别到金额，请重拍清晰截图或改为手动录入";
+      prog.textContent = "未识别到金额，请重拍清晰截图或改为手动录入";
       return;
     }
     ocrState.type = parsed.type;
-    document.getElementById("ocr-progress").textContent = "识别完成，请核对后入账";
+    prog.textContent = "识别完成，请核对后入账";
     document.getElementById("ocr-amount").value = parsed.amount;
     document.getElementById("ocr-date").value = parsed.date || todayStr();
     document.getElementById("ocr-note").value = parsed.merchant;
@@ -766,7 +775,7 @@ async function runOcr(dataUrl) {
     document.getElementById("ocr-btn-confirm").style.display = "block";
   } catch (e) {
     console.error(e);
-    document.getElementById("ocr-progress").textContent = "识别失败：" + (e.message || e) + "，请重试";
+    prog.textContent = "识别失败：" + (e.message || e) + "。可开 VPN 重试，或直接手动录入";
   }
 }
 
