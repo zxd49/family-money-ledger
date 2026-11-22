@@ -171,10 +171,11 @@
   </div>
   <div class="card">
     <h2>数据迁移（旧记录上云）</h2>
-    <p style="font-size:13px;color:#888;margin:4px 0 10px;">在旧浏览器点「导出」下载备份文件，再到新浏览器点「导入并上云」。</p>
+    <p style="font-size:13px;color:#888;margin:4px 0 10px;">在有旧记录的浏览器点「一键上传本地记录」即可上云；下面导出/导入用于跨设备备份。</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <button class="btn small" style="margin:0;" onclick="exportData()">导出本地记录</button>
-      <button class="btn small" style="margin:0;" onclick="document.getElementById('import-file').click()">导入并上云</button>
+      <button class="btn small" style="margin:0;" onclick="pushLocalToCloud()">一键上传本地记录</button>
+      <button class="btn small" style="margin:0;" onclick="exportData()">导出备份</button>
+      <button class="btn small" style="margin:0;" onclick="document.getElementById('import-file').click()">导入备份上云</button>
       <input type="file" id="import-file" accept=".json,application/json" style="display:none" onchange="importData(this)">
     </div>
   </div>
@@ -519,6 +520,25 @@ async function persistRemove(id) {
 }
 
 /* ================= 数据迁移：导出 / 导入上云 ================= */
+async function pushLocalToCloud() {
+  const local = loadLocal();
+  if (!local.length) { toast("本地没有记录可上传"); return; }
+  let cloudIds = new Set();
+  try {
+    const r = await cloudFetch(`${SUPABASE_URL}/rest/v1/${TABLE}?select=id`, { headers: SB_HEADERS }, 6000);
+    if (r.ok) { const j = await r.json(); cloudIds = new Set(j.map(x => Number(x.id))); }
+  } catch (e) { toast("读云端失败，请检查网络"); return; }
+  let ok = 0, skip = 0, fail = 0;
+  for (const row of local.map(normalizeRow)) {
+    if (cloudIds.has(Number(row.id))) { skip++; continue; }
+    const done = await persistNew(row);
+    if (done) { ok++; cloudIds.add(Number(row.id)); } else fail++;
+  }
+  await loadData();
+  refreshAll();
+  toast(`上传完成：成功 ${ok}，已存在 ${skip}，失败 ${fail}`);
+}
+
 function exportData() {
   const arr = loadLocal();
   if (!arr.length) { toast("本地没有可导出的记录"); return; }
