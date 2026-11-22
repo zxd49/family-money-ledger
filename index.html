@@ -169,6 +169,15 @@
     <h2>账单历史</h2>
     <div id="history-list"></div>
   </div>
+  <div class="card">
+    <h2>数据迁移（旧记录上云）</h2>
+    <p style="font-size:13px;color:#888;margin:4px 0 10px;">在旧浏览器点「导出」下载备份文件，再到新浏览器点「导入并上云」。</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="btn small" style="margin:0;" onclick="exportData()">导出本地记录</button>
+      <button class="btn small" style="margin:0;" onclick="document.getElementById('import-file').click()">导入并上云</button>
+      <input type="file" id="import-file" accept=".json,application/json" style="display:none" onchange="importData(this)">
+    </div>
+  </div>
 </div>
 
 <div class="tabbar">
@@ -507,6 +516,46 @@ async function persistRemove(id) {
     document.getElementById("sync-tag").textContent = "本地模式";
     return false;
   }
+}
+
+/* ================= 数据迁移：导出 / 导入上云 ================= */
+function exportData() {
+  const arr = loadLocal();
+  if (!arr.length) { toast("本地没有可导出的记录"); return; }
+  const blob = new Blob([JSON.stringify(arr, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "ledger-backup-" + todayStr() + ".json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast("已导出 " + arr.length + " 条");
+}
+
+async function importData(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const text = await file.text();
+  let raw;
+  try { raw = JSON.parse(text); } catch (e) { toast("文件格式错误，不是有效备份"); input.value = ""; return; }
+  if (!Array.isArray(raw)) { toast("文件格式错误"); input.value = ""; return; }
+  const rows = raw.map(normalizeRow).filter(r => r.amount > 0);
+  if (!rows.length) { toast("文件里没有记录"); input.value = ""; return; }
+  // 先取云端已有 id，避免重复
+  let cloudIds = new Set();
+  try {
+    const r = await cloudFetch(`${SUPABASE_URL}/rest/v1/${TABLE}?select=id`, { headers: SB_HEADERS }, 6000);
+    if (r.ok) { const j = await r.json(); cloudIds = new Set(j.map(x => Number(x.id))); }
+  } catch (e) {}
+  let ok = 0, fail = 0, skip = 0;
+  for (const row of rows) {
+    if (cloudIds.has(Number(row.id))) { skip++; continue; }
+    const done = await persistNew(row);
+    if (done) { ok++; cloudIds.add(Number(row.id)); } else fail++;
+  }
+  input.value = "";
+  await loadData();
+  refreshAll();
+  toast(`导入完成：成功 ${ok}，跳过 ${skip}，失败 ${fail}`);
 }
 
 /* ================= 通用 UI ================= */
